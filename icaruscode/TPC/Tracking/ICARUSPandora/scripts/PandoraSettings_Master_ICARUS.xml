@@ -52,6 +52,7 @@
         <RecreatedVertexListName>RecreatedVertices</RecreatedVertexListName>
         <VisualizeOverallRecoStatus>false</VisualizeOverallRecoStatus>
         <InTimeMaxX0>2.0</InTimeMaxX0>
+	<LArCaloHitVersion>2</LArCaloHitVersion>
     </algorithm>
 
     <algorithm type = "LArVisualMonitoring">

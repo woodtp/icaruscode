@@ -65,7 +65,9 @@
     </algorithm>
 
     <algorithm type = "LArClusteringParent">
-        <algorithm type = "LArTrackClusterCreation" description = "ClusterFormation"/>
+        <algorithm type = "LArTrackClusterCreation" description = "ClusterFormation">
+	  <CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations>
+	</algorithm>
         <InputCaloHitListName>CaloHitListW</InputCaloHitListName>
         <ClusterListName>ClustersW</ClusterListName>
         <ReplaceCurrentCaloHitList>true</ReplaceCurrentCaloHitList>
@@ -103,7 +105,9 @@
     </algorithm>
     <algorithm type = "LArTrackConsolidation">
         <CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations>
-        <algorithm type = "LArSimpleClusterCreation" description = "ClusterRebuilding"/>
+        <algorithm type = "LArSimpleClusterCreation" description = "ClusterRebuilding">
+          <CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations>
+	</algorithm>
     </algorithm>
 
     <!-- ThreeDTrackAlgorithms -->
@@ -168,7 +172,9 @@
 
     <!-- DeltaRayClustering -->
     <algorithm type = "LArClusteringParent">
-        <algorithm type = "LArSimpleClusterCreation" description = "ClusterFormation"/>
+        <algorithm type = "LArSimpleClusterCreation" description = "ClusterFormation">
+          <CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations>
+        </algorithm>
         <InputCaloHitListName>CaloHitListW</InputCaloHitListName>
         <ClusterListName>ClustersW</ClusterListName>
         <ReplaceCurrentCaloHitList>false</ReplaceCurrentCaloHitList>

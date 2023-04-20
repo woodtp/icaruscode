@@ -57,7 +57,9 @@
     </algorithm>
 
     <algorithm type = "LArClusteringParent">
-        <algorithm type = "LArTrackClusterCreation" description = "ClusterFormation"/>
+        <algorithm type = "LArTrackClusterCreation" description = "ClusterFormation">
+	  <CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations>
+	</algorithm>
         <InputCaloHitListName>CaloHitListW</InputCaloHitListName>
         <ClusterListName>ClustersW</ClusterListName>
         <ReplaceCurrentCaloHitList>true</ReplaceCurrentCaloHitList>
@@ -87,7 +89,9 @@
     <algorithm type = "LArKinkSplitting"/>
     <algorithm type = "LArTrackConsolidation">
         <CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations>
-        <algorithm type = "LArSimpleClusterCreation" description = "ClusterRebuilding"/>
+        <algorithm type = "LArSimpleClusterCreation" description = "ClusterRebuilding">
+          <CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations>
+        </algorithm>
     </algorithm>
 
     <!-- ThreeDTrackAlgorithms -->
