@@ -93,8 +93,8 @@
     <algorithm type = "LArCrossGapsExtension">
       <CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations>
     </algorithm>
-    <algorithm type = "LArBranchSplitting"><CosmicMode>true</CosmicMode></algorithm>
-    <algorithm type = "LArDeltaRaySplitting"><CosmicMode>true</CosmicMode></algorithm>
+    <algorithm type = "LArBranchSplitting"><CosmicMode>true</CosmicMode><CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations></algorithm>
+    <algorithm type = "LArDeltaRaySplitting"><CosmicMode>true</CosmicMode><CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations></algorithm>
     <algorithm type = "LArCrossedTrackSplitting"/>
     <algorithm type = "LArCosmicRaySplitting"/>
     <algorithm type = "LArCosmicRayExtension">
@@ -149,7 +149,9 @@
         <TrackTools>
             <tool type = "LArClearTrackFragments"/>
         </TrackTools>
-        <algorithm type = "LArSimpleClusterCreation" description = "ClusterRebuilding"/>
+        <algorithm type = "LArSimpleClusterCreation" description = "ClusterRebuilding">
+          <CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations>
+        </algorithm>
     </algorithm>
     <algorithm type = "LArCosmicRayTrackMatching">
         <InputClusterListNameU>ClustersU</InputClusterListNameU>

@@ -86,7 +86,7 @@
       <CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations>
   </algorithm>
   <algorithm type = "LArOvershootSplitting"/>
-  <algorithm type = "LArBranchSplitting"/>
+  <algorithm type = "LArBranchSplitting"><CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations></algorithm>
   <algorithm type = "LArKinkSplitting"/>
   <algorithm type = "LArTrackConsolidation">
     <CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations>
@@ -168,7 +168,9 @@
     <TrackTools>
       <tool type = "LArClearTrackFragments"/>
     </TrackTools>
-    <algorithm type = "LArSimpleClusterCreation" description = "ClusterRebuilding"/>
+    <algorithm type = "LArSimpleClusterCreation" description = "ClusterRebuilding">
+      <CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations>
+    </algorithm>
   </algorithm>
 
   <!-- ThreeDShowerAlgorithms -->
@@ -238,7 +240,9 @@
     <TrackTools>
       <tool type = "LArClearTrackFragments"/>
     </TrackTools>
-    <algorithm type = "LArSimpleClusterCreation" description = "ClusterRebuilding"/>
+    <algorithm type = "LArSimpleClusterCreation" description = "ClusterRebuilding">
+      <CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations>
+    </algorithm>
   </algorithm>
 
   <!-- ThreeDRecoveryAlgorithms -->

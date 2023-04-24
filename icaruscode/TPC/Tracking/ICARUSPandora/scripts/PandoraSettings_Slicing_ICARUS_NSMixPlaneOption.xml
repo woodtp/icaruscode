@@ -65,6 +65,7 @@
         <ReplaceCurrentCaloHitList>true</ReplaceCurrentCaloHitList>
         <ReplaceCurrentClusterList>true</ReplaceCurrentClusterList>
     </algorithm>
+    <!-- <algorithm type = "LArCheckClusterSubVolume"><AuxInfo>"Part1"</AuxInfo></algorithm> BH-->
     <algorithm type = "LArLayerSplitting"/>
     <algorithm type = "LArLongitudinalAssociation">
       <CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations>
@@ -85,7 +86,7 @@
       <CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations>
     </algorithm>
     <algorithm type = "LArOvershootSplitting"/>
-    <algorithm type = "LArBranchSplitting"/>
+    <algorithm type = "LArBranchSplitting"><CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations></algorithm>
     <algorithm type = "LArKinkSplitting"/>
     <algorithm type = "LArTrackConsolidation">
         <CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations>
@@ -93,6 +94,7 @@
           <CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations>
         </algorithm>
     </algorithm>
+    <algorithm type = "LArCheckClusterSubVolume"><AuxInfo>End2dClustering</AuxInfo></algorithm> <!--BH-->
 
     <!-- ThreeDTrackAlgorithms -->
     <algorithm type = "LArThreeDTransverseTracks">
@@ -114,6 +116,7 @@
             <tool type = "LArMissingTrack"/>
         </TrackTools>
     </algorithm>
+    <algorithm type = "LArCheckClusterSubVolume"><AuxInfo>LArThreeDTransverseTracks</AuxInfo><NonCurrent>true</NonCurrent><ClusterListName>ClustersW</ClusterListName></algorithm> <!--BH-->
     <algorithm type = "LArThreeDLongitudinalTracks">
         <InputClusterListNameU>ClustersU</InputClusterListNameU>
         <InputClusterListNameV>ClustersV</InputClusterListNameV>
@@ -124,6 +127,7 @@
             <tool type = "LArMatchedEndPoints"/>
         </TrackTools>
     </algorithm>
+    <algorithm type = "LArCheckClusterSubVolume"><AuxInfo>LArThreeDLongitudinalTracks</AuxInfo><NonCurrent>true</NonCurrent><ClusterListName>ClustersW</ClusterListName></algorithm> <!--BH-->
     <algorithm type = "LArThreeDTrackFragments">
         <MinClusterLength>5.</MinClusterLength>
         <InputClusterListNameU>ClustersU</InputClusterListNameU>
@@ -133,8 +137,11 @@
         <TrackTools>
             <tool type = "LArClearTrackFragments"/>
         </TrackTools>
-        <algorithm type = "LArSimpleClusterCreation" description = "ClusterRebuilding"/>
+        <algorithm type = "LArSimpleClusterCreation" description = "ClusterRebuilding">
+	  <CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations>
+	</algorithm>
     </algorithm>
+    <algorithm type = "LArCheckClusterSubVolume"><AuxInfo>End3dTrackAlgs</AuxInfo><NonCurrent>true</NonCurrent><ClusterListName>ClustersW</ClusterListName></algorithm> <!--BH-->
 
     <!-- ThreeDShowerAlgorithms -->
     <algorithm type = "LArCutPfoCharacterisation">
@@ -163,6 +170,7 @@
             <tool type = "LArSimpleShowers"/>
         </ShowerTools>
     </algorithm>
+    <algorithm type = "LArCheckClusterSubVolume"><AuxInfo>End3dShower</AuxInfo><NonCurrent>true</NonCurrent><ClusterListName>ClustersW</ClusterListName></algorithm> <!--BH-->
 
     <!-- Repeat ThreeDTrackAlgorithms -->
     <algorithm type = "LArThreeDTransverseTracks">
@@ -203,8 +211,11 @@
         <TrackTools>
             <tool type = "LArClearTrackFragments"/>
         </TrackTools>
-        <algorithm type = "LArSimpleClusterCreation" description = "ClusterRebuilding"/>
+        <algorithm type = "LArSimpleClusterCreation" description = "ClusterRebuilding">
+          <CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations>
+        </algorithm>
     </algorithm>
+    <algorithm type = "LArCheckClusterSubVolume"><AuxInfo>EndRepeat3dTrackAlgs</AuxInfo><NonCurrent>true</NonCurrent><ClusterListName>ClustersW</ClusterListName></algorithm> <!--BH-->
 
     <!-- ThreeDRecoveryAlgorithms -->
     <algorithm type = "LArVertexBasedPfoRecovery">
@@ -269,6 +280,7 @@
         <tool type = "LArEventSlicing" description = "SliceCreation">
             <TrackPfoListName>TrackParticles3D</TrackPfoListName>
             <ShowerPfoListName>ShowerParticles3D</ShowerPfoListName>
+	    <CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations>
         </tool>
         <algorithm type = "LArListDeletion" description = "SlicingListDeletion">
             <PfoListNames>TrackParticles3D ShowerParticles3D</PfoListNames>
