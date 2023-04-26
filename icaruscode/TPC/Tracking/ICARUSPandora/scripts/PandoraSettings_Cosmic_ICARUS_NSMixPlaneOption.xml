@@ -109,6 +109,7 @@
           <CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations>
 	</algorithm>
     </algorithm>
+    <algorithm type = "LArCheckClusterSubVolume"><AuxInfo>End2dClustering</AuxInfo></algorithm> <!--BH-->
 
     <!-- ThreeDTrackAlgorithms -->
     <algorithm type = "LArThreeDTransverseTracks">
@@ -153,6 +154,7 @@
           <CheckInterTPCVolumeAssociations>true</CheckInterTPCVolumeAssociations>
         </algorithm>
     </algorithm>
+    <algorithm type = "LArCheckClusterSubVolume"><AuxInfo>End3dTrackAlgsAlsoInSlicing</AuxInfo></algorithm> <!--BH-->
     <algorithm type = "LArCosmicRayTrackMatching">
         <InputClusterListNameU>ClustersU</InputClusterListNameU>
         <InputClusterListNameV>ClustersV</InputClusterListNameV>
@@ -165,6 +167,7 @@
         <InputClusterListNameW>ClustersW</InputClusterListNameW>
         <OutputPfoListName>MuonParticles3D</OutputPfoListName>
     </algorithm>
+    <algorithm type = "LArCheckClusterSubVolume"><AuxInfo>End3dTrackAlgs</AuxInfo></algorithm> <!--BH-->
 
     <!-- PruneClusters -->
     <algorithm type = "LArListPruning" description = "ListPruning">
@@ -196,6 +199,7 @@
         <ReplaceCurrentCaloHitList>false</ReplaceCurrentCaloHitList>
         <ReplaceCurrentClusterList>false</ReplaceCurrentClusterList>
     </algorithm>
+    <algorithm type = "LArCheckClusterSubVolume"><AuxInfo>EndDeltaRayClustering</AuxInfo></algorithm> <!--BH-->
 
     <!-- DeltaRayAlgorithms -->
     <algorithm type = "LArDeltaRayIdentification">
@@ -227,6 +231,7 @@
     <algorithm type = "LArUnattachedDeltaRays">
         <PfoListName>DeltaRayParticles3D</PfoListName>
     </algorithm>
+    <algorithm type = "LArCheckClusterSubVolume"><AuxInfo>EndDeltaRayAlgorithms</AuxInfo></algorithm> <!--BH-->
 
     <!-- TwoDRemnantAlgorithms -->
     <algorithm type = "LArSimpleClusterGrowing">
