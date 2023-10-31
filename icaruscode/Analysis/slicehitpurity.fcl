@@ -1,0 +1,22 @@
+process_name: SliceHitPurity
+
+physics:
+{
+	analyzers:
+	{
+		SliceHitPurity: {
+			module_type: "SliceHitPurityAna"
+		}
+	}
+	ana: [ SliceHitPurity ]
+	end_paths: [ ana ]
+}
+
+outputs:
+{
+	out1:
+	{
+		module_type: RootOutput
+		fileName: "sliceHitPurity_icarus.root"
+	}
+}
