@@ -81,3 +81,4 @@ Thumbs.db
 # clangd
 compile_commands.json
 .cache
+.clang-format
