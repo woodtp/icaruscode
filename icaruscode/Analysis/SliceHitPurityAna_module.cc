@@ -57,13 +57,13 @@ namespace SliceHitPurity {
 
   private:
     // Declare member data here.
-    int fMixedCandidateCount = 0;
+    unsigned int fMixedCandidateCount = 0;
     enum WirePlane { IND1 = 0, IND2 = 1, COLL = 2 };
-    static constexpr std::string_view fModuleName = "SliceHitPurityAna";
-    const std::array<std::string_view, 2> fCryostats{"E", "W"};
-    const std::string fSliceLabel = "pandoraGausCryo";
-    const std::string fHitLabel = "cluster3DCryo";
-    const std::string fMCLabel = "mcassociationsGausCryo";
+    static constexpr const char* fModuleName = "SliceHitPurityAna";
+    static constexpr std::array<const char*, 2> fCryostats{"E", "W"};
+    inline static const std::string fSliceLabel = "pandoraGausCryo";
+    inline static const std::string fHitLabel = "cluster3DCryo";
+    inline static const std::string fMCLabel = "mcassociationsGausCryo";
     constexpr static double fZGap = 200.; // for avoiding the z-Gap, e.g., std::abs(z) < fZGap
 
     art::Handle<std::vector<recob::Slice>> fSliceHandle;
@@ -108,7 +108,7 @@ namespace SliceHitPurity {
     TTree* fTree;
 
     void InitTTree();
-    void SetupFindManyPointers(art::Event const& evt, std::string_view cryo);
+    void SetupFindManyPointers(art::Event const& evt, const std::string_view cryo);
     void DuplicateStudy(
       const std::vector<art::Ptr<recob::Hit>>& hits,
       const art::FindMany<simb::MCParticle, anab::BackTrackerHitMatchingData>& fmp,
@@ -154,29 +154,29 @@ namespace SliceHitPurity {
                   &fMultiMatchedHitFractionContainingDupes);
   }
 
-  void SliceHitPurityAna::SetupFindManyPointers(art::Event const& evt, std::string_view cryo)
+  void SliceHitPurityAna::SetupFindManyPointers(art::Event const& evt, const std::string_view cryo)
   {
     std::string label = fSliceLabel + cryo.data();
     std::string mcLabel = fMCLabel + cryo.data();
 
     evt.getByLabel(fSliceLabel + cryo.data(), fSliceHandle);
     if (!fSliceHandle.isValid()) {
-      mf::LogWarning(fModuleName.data())
-        << "Unabled to locate recob::Slice in " << fSliceLabel + cryo.data() << '\n';
+      mf::LogWarning(fModuleName) << "Unabled to locate recob::Slice in "
+                                  << fSliceLabel + cryo.data() << '\n';
     }
 
     art::Handle<std::vector<recob::Hit>> hitHandle;
     evt.getByLabel(fHitLabel + cryo.data(), hitHandle);
     if (!hitHandle.isValid()) {
-      mf::LogWarning(fModuleName.data())
-        << "Unabled to locate recob::Hit in " << fHitLabel + cryo.data() << '\n';
+      mf::LogWarning(fModuleName) << "Unabled to locate recob::Hit in " << fHitLabel + cryo.data()
+                                  << '\n';
     }
 
     art::Handle<std::vector<recob::PFParticle>> pfpHandle;
     evt.getByLabel(fSliceLabel + cryo.data(), pfpHandle);
     if (!pfpHandle.isValid()) {
-      mf::LogWarning(fModuleName.data())
-        << "Unabled to locate recob::Hit in " << fHitLabel + cryo.data() << '\n';
+      mf::LogWarning(fModuleName) << "Unabled to locate recob::Hit in " << fHitLabel + cryo.data()
+                                  << '\n';
     }
 
     fFindManyMCParticles =
@@ -269,7 +269,7 @@ namespace SliceHitPurity {
       }   // Slices
       const int count = SliceHitStudy(slcMaps);
       fMixedCandidateCount += count;
-      mf::LogInfo(fModuleName.data()) << "Final count for slice: " << count << '\n';
+      mf::LogInfo(fModuleName) << "Final count for slice: " << count << '\n';
     } // East/West Cryostat
 
     fRun = evt.id().run();
@@ -277,13 +277,13 @@ namespace SliceHitPurity {
     fEvent = evt.id().event();
     fTree->Fill();
 
-    mf::LogInfo(fModuleName.data()) << "Done.\n"
-                                    << "FINAL COUNT " << fMixedCandidateCount << std::endl;
+    mf::LogInfo(fModuleName) << "Done.\n"
+                             << "FINAL COUNT " << fMixedCandidateCount << std::endl;
   } // end Analyze()
 
   int SliceHitPurityAna::SliceHitStudy(const SliceMaps& slcMaps)
   {
-    int count = 0;
+    unsigned int count = 0;
     for (auto it1 = slcMaps.sliceToMCTrackId.begin(); it1 != slcMaps.sliceToMCTrackId.end();
          ++it1) {
       for (auto it2 = std::next(it1); it2 != slcMaps.sliceToMCTrackId.end(); ++it2) {
@@ -410,8 +410,8 @@ namespace SliceHitPurity {
             std::cout << tab << "Start Stop Z: { " << otherMCP->Vz() << ", " << otherMCP->EndZ()
                       << " }\n";
 
-            std::cout << tab << "Overlap X? FALSE\n";
-            std::cout << tab << "Overlap Z? TRUE\n\n";
+            std::cout << tab << "Overlap X? " << noOverlapX << " (" << overlapX << " cm) \n";
+            std::cout << tab << "Overlap Z? " << noOverlapZ << " (" << overlapZ << " cm)\n\n";
 
             std::cout << tab << "Slice " << slc1 << "\n";
 
@@ -459,7 +459,7 @@ namespace SliceHitPurity {
     const int sliceID)
   {
     auto const nHits = hits.size();
-    int hit_count = 0;
+    unsigned int hit_count = 0;
 
     unsigned int noMatches = 0;
     unsigned int hitsMatchedToOneMCP = 0;
