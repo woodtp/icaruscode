@@ -31,6 +31,7 @@
 #include <lardataobj/RecoBase/PFParticle.h>
 #include <lardataobj/RecoBase/Vertex.h>
 #include <map>
+#include <memory>
 #include <set>
 #include <string_view>
 #include <unordered_map>
@@ -56,12 +57,32 @@ namespace SliceHitPurity {
 
   private:
     // Declare member data here.
+    int fMixedCandidateCount = 0;
     enum WirePlane { IND1 = 0, IND2 = 1, COLL = 2 };
     static constexpr std::string_view fModuleName = "SliceHitPurityAna";
     const std::array<std::string_view, 2> fCryostats{"E", "W"};
     const std::string fSliceLabel = "pandoraGausCryo";
     const std::string fHitLabel = "cluster3DCryo";
     const std::string fMCLabel = "mcassociationsGausCryo";
+    constexpr static double fZGap = 200.; // for avoiding the z-Gap, e.g., std::abs(z) < fZGap
+
+    art::Handle<std::vector<recob::Slice>> fSliceHandle;
+
+    std::unique_ptr<art::FindManyP<recob::Hit>> fFindManyHits;
+    std::unique_ptr<art::FindMany<simb::MCParticle, anab::BackTrackerHitMatchingData>>
+      fFindManyMCParticles;
+    std::unique_ptr<art::FindManyP<recob::PFParticle>> fFindManyPFParticles;
+    std::unique_ptr<art::FindManyP<recob::Vertex>> fFindManyVertices;
+
+    struct SliceMaps {
+      std::map<int, std::set<int>> sliceToMCTrackId;
+      std::map<int, std::map<int, int>> sliceToMCTrackIdAndHits;
+      std::map<int, std::size_t> sliceToTotalHits;
+      std::map<int, TVector3> sliceToVtx;
+      // std::map<int, int> trackIdToPdg;
+      std::map<int, std::map<int, std::set<int>>> trackIdSeenInViews;
+      std::map<int, const simb::MCParticle*> trackIdToMCParticle;
+    };
 
     std::vector<int> fRuns;
     std::vector<int> fSubRuns;
@@ -87,14 +108,22 @@ namespace SliceHitPurity {
     TTree* fTree;
 
     void InitTTree();
+    void SetupFindManyPointers(art::Event const& evt, std::string_view cryo);
     void DuplicateStudy(
       const std::vector<art::Ptr<recob::Hit>>& hits,
       const art::FindMany<simb::MCParticle, anab::BackTrackerHitMatchingData>& fmp,
       const int sliceID);
     static bool IsProbablyACosmic(const simb::MCParticle& particle);
+    [[nodiscard]] int SliceHitStudy(const SliceMaps& slcMaps);
+    void DumpToTerminal();
   };
 
-  SliceHitPurityAna::SliceHitPurityAna(fhicl::ParameterSet const& p) : EDAnalyzer{p}
+  SliceHitPurityAna::SliceHitPurityAna(fhicl::ParameterSet const& p)
+    : EDAnalyzer{p}
+    , fFindManyHits(nullptr)
+    , fFindManyMCParticles(nullptr)
+    , fFindManyPFParticles(nullptr)
+    , fFindManyVertices(nullptr)
   {
     // Call appropriate consumes<>() for any products to be retrieved by this
     // TODO: what?
@@ -125,6 +154,41 @@ namespace SliceHitPurity {
                   &fMultiMatchedHitFractionContainingDupes);
   }
 
+  void SliceHitPurityAna::SetupFindManyPointers(art::Event const& evt, std::string_view cryo)
+  {
+    std::string label = fSliceLabel + cryo.data();
+    std::string mcLabel = fMCLabel + cryo.data();
+
+    evt.getByLabel(fSliceLabel + cryo.data(), fSliceHandle);
+    if (!fSliceHandle.isValid()) {
+      mf::LogWarning(fModuleName.data())
+        << "Unabled to locate recob::Slice in " << fSliceLabel + cryo.data() << '\n';
+    }
+
+    art::Handle<std::vector<recob::Hit>> hitHandle;
+    evt.getByLabel(fHitLabel + cryo.data(), hitHandle);
+    if (!hitHandle.isValid()) {
+      mf::LogWarning(fModuleName.data())
+        << "Unabled to locate recob::Hit in " << fHitLabel + cryo.data() << '\n';
+    }
+
+    art::Handle<std::vector<recob::PFParticle>> pfpHandle;
+    evt.getByLabel(fSliceLabel + cryo.data(), pfpHandle);
+    if (!pfpHandle.isValid()) {
+      mf::LogWarning(fModuleName.data())
+        << "Unabled to locate recob::Hit in " << fHitLabel + cryo.data() << '\n';
+    }
+
+    fFindManyMCParticles =
+      std::make_unique<art::FindMany<simb::MCParticle, anab::BackTrackerHitMatchingData>>(
+        hitHandle, evt, mcLabel);
+
+    fFindManyHits = std::make_unique<art::FindManyP<recob::Hit>>(fSliceHandle, evt, label);
+    fFindManyVertices = std::make_unique<art::FindManyP<recob::Vertex>>(pfpHandle, evt, label);
+    fFindManyPFParticles =
+      std::make_unique<art::FindManyP<recob::PFParticle>>(fSliceHandle, evt, label);
+  }
+
   bool SliceHitPurityAna::IsProbablyACosmic(const simb::MCParticle& particle)
   {
     const bool isMuon = std::abs(particle.PdgCode());
@@ -133,6 +197,260 @@ namespace SliceHitPurity {
                                         particle.Vy() < -185.;
 
     return isMuon && generatedOutsideVolume;
+  }
+
+  void SliceHitPurityAna::analyze(art::Event const& evt)
+  {
+    for (auto const& cryo : fCryostats) {
+      SetupFindManyPointers(evt, cryo);
+
+      SliceMaps slcMaps;
+
+      for (auto const& slc : *fSliceHandle) {
+        const int sliceId = slc.ID();
+        auto const& hits = fFindManyHits->at(sliceId);
+        auto const& pfps = fFindManyPFParticles->at(sliceId);
+        if (pfps.empty()) { continue; }
+        auto const& prim =
+          std::find_if(pfps.begin(), pfps.end(), [](const art::Ptr<recob::PFParticle>& pfp) {
+            return pfp->IsPrimary();
+          });
+        auto const& vertices = fFindManyVertices->at(prim->key());
+
+        if (vertices.size() != 1) { continue; }
+
+        auto const vtx = TVector3(
+          vertices[0]->position().X(), vertices[0]->position().Y(), vertices[0]->position().Z());
+
+        if (std::abs(vtx.Z()) < fZGap) { continue; }
+
+        slcMaps.sliceToVtx[sliceId] = vtx;
+
+        std::map<int, std::set<int>> planeTPCSets;
+
+        // DuplicateStudy(hits, fmp, sliceID);
+
+        std::map<int, int> trackIdToNHits;
+        std::set<int> uniqueTrackIds;
+        slcMaps.sliceToTotalHits[sliceId] = 0;
+        std::vector<geo::WireID> wires;
+        for (auto const& hit : hits) {
+          auto const& wireID = hit->WireID();
+          auto const& planeID = wireID.asPlaneID().deepestIndex();
+          auto const& tpcID = wireID.asTPCID().deepestIndex();
+
+          if (planeID == WirePlane::IND1) { wires.push_back(wireID); }
+
+          slcMaps.sliceToTotalHits[sliceId]++;
+
+          planeTPCSets[planeID].insert(tpcID);
+
+          // double matchedFraction = 0.;
+          auto const& mcParts = fFindManyMCParticles->at(hit.key());
+          for (std::size_t i = 0; i < mcParts.size(); ++i) {
+            auto const& mcp = mcParts[i];
+            if (std::abs(mcp->Vz()) < fZGap || std::abs(mcp->EndZ()) < fZGap) { continue; }
+            // auto const& md = fmp.data(hit.key()).at(i);
+
+            const int trackId = mcp->TrackId();
+            if (uniqueTrackIds.find(trackId) == uniqueTrackIds.end()) {
+              uniqueTrackIds.insert(trackId);
+              slcMaps.sliceToMCTrackIdAndHits[sliceId][trackId] = 0;
+              // slcMaps.trackIdToPdg[trackId] = mcp->PdgCode();
+              slcMaps.trackIdToMCParticle[trackId] = mcp;
+            }
+            slcMaps.trackIdSeenInViews[sliceId][trackId].insert(planeID);
+          }
+          for (auto const& id : uniqueTrackIds) {
+            slcMaps.sliceToMCTrackIdAndHits[sliceId][id]++;
+          }
+          slcMaps.sliceToMCTrackId[sliceId] = uniqueTrackIds;
+        } // Hits
+      }   // Slices
+      const int count = SliceHitStudy(slcMaps);
+      fMixedCandidateCount += count;
+      mf::LogInfo(fModuleName.data()) << "Final count for slice: " << count << '\n';
+    } // East/West Cryostat
+
+    fRun = evt.id().run();
+    fSubRun = evt.id().subRun();
+    fEvent = evt.id().event();
+    fTree->Fill();
+
+    mf::LogInfo(fModuleName.data()) << "Done.\n"
+                                    << "FINAL COUNT " << fMixedCandidateCount << std::endl;
+  } // end Analyze()
+
+  int SliceHitPurityAna::SliceHitStudy(const SliceMaps& slcMaps)
+  {
+    int count = 0;
+    for (auto it1 = slcMaps.sliceToMCTrackId.begin(); it1 != slcMaps.sliceToMCTrackId.end();
+         ++it1) {
+      for (auto it2 = std::next(it1); it2 != slcMaps.sliceToMCTrackId.end(); ++it2) {
+        auto const& slc1 = it1->first;
+        auto const& slc2 = it2->first;
+        auto const& trackIds1 = it1->second;
+        auto const& trackIds2 = it2->second;
+
+        std::set<int> commonIds;
+
+        std::set_intersection(trackIds1.begin(),
+                              trackIds1.end(),
+                              trackIds2.begin(),
+                              trackIds2.end(),
+                              std::inserter(commonIds, commonIds.begin()));
+
+        if (commonIds.empty()) { continue; }
+
+        std::set<int> otherIds;
+        std::set_symmetric_difference(trackIds1.begin(),
+                                      trackIds1.end(),
+                                      trackIds2.begin(),
+                                      trackIds2.end(),
+                                      std::inserter(otherIds, otherIds.begin()));
+
+        for (auto const& id : commonIds) {
+          auto const noAssocHits1 = slcMaps.sliceToMCTrackIdAndHits.at(slc1).at(id);
+          auto const noAssocHits2 = slcMaps.sliceToMCTrackIdAndHits.at(slc2).at(id);
+
+          auto const noTotalHits1 = slcMaps.sliceToTotalHits.at(slc1);
+          auto const noTotalHits2 = slcMaps.sliceToTotalHits.at(slc2);
+
+          auto const assocHitsFrac1 = noAssocHits1 / (double)noTotalHits1;
+          auto const assocHitsFrac2 = noAssocHits2 / (double)noTotalHits2;
+
+          auto const& seenViews1 = slcMaps.trackIdSeenInViews.at(slc1).at(id);
+          auto const& seenViews2 = slcMaps.trackIdSeenInViews.at(slc2).at(id);
+
+          const bool trackIdSlc1SeenOnce = seenViews1.size() == 1;
+          const bool trackIdSlc2SeenOnce = seenViews2.size() == 1;
+
+          auto const trackIdSeenInduction1Only =
+            (trackIdSlc1SeenOnce && *seenViews1.begin() == 0) ||
+            (trackIdSlc2SeenOnce && *seenViews2.begin() == 0);
+
+          auto const otherTrackIdSeenInMultipleViews =
+            trackIdSeenInduction1Only && (seenViews1.size() > 1 || seenViews2.size() > 1);
+
+          if (!otherTrackIdSeenInMultipleViews) { continue; }
+
+          auto const& multiViews = seenViews1.size() > 1 ? seenViews1 : seenViews2;
+
+          bool isAnyInd1 = false;
+          for (auto const& view : multiViews) {
+            if (view == 0) { isAnyInd1 = true; }
+          }
+
+          if (!isAnyInd1) { continue; }
+
+          auto const& singleViewMCP = slcMaps.trackIdToMCParticle.at(id);
+
+          const double startX = singleViewMCP->Vx();
+          const double endX = singleViewMCP->EndX();
+
+          const double startZ = singleViewMCP->Vz();
+          const double endZ = singleViewMCP->EndZ();
+
+          const double maxX = std::max(startX, endX);
+          const double maxZ = std::max(startZ, endZ);
+          const double minX = std::min(startX, endX);
+          const double minZ = std::min(startZ, endZ);
+
+          for (auto const& otherId : otherIds) {
+            if (otherId == id) { continue; }
+            auto const& otherMCP = slcMaps.trackIdToMCParticle.at(otherId);
+            const double otherStartX = otherMCP->Vx();
+            const double otherEndX = otherMCP->EndX();
+
+            const double otherStartZ = otherMCP->Vz();
+            const double otherEndZ = otherMCP->EndZ();
+
+            const double otherMaxX = std::max(otherStartX, otherEndX);
+            const double otherMaxZ = std::max(otherStartZ, otherEndZ);
+
+            const double otherMinX = std::min(otherStartX, otherEndX);
+            const double otherMinZ = std::min(otherStartZ, otherEndZ);
+
+            const double overlapX = std::min(maxX, otherMaxX) - std::max(minX, otherMinX);
+            const double overlapZ = std::min(maxZ, otherMaxZ) - std::max(minZ, otherMinZ);
+
+            const bool noOverlapX = overlapX < std::numeric_limits<double>::epsilon();
+            const bool noOverlapZ = overlapZ < std::numeric_limits<double>::epsilon();
+
+            // if doesn't overlap in x or does overlap in z, continue.
+            if (noOverlapX || !noOverlapZ) { continue; }
+
+            count++;
+
+            const char* const tab = "    ";
+            std::cout << "Slices " << slc1 << ", " << slc2 << '\n';
+            std::cout << tab << "{ ";
+            for (auto const& id : trackIds1) {
+              std::cout << id << ' ';
+            }
+
+            std::cout << "}, { ";
+            for (auto const& id : trackIds2) {
+              std::cout << id << ' ';
+            }
+            std::cout << " }\n";
+
+            std::cout << tab << "COMMON TrackId " << id << " (pdg = " << singleViewMCP->PdgCode()
+                      << ")\n";
+
+            std::cout << tab << "Start Stop X: { " << singleViewMCP->Vx() << ", "
+                      << singleViewMCP->EndX() << " }\n";
+            std::cout << tab << "Start Stop Z: { " << singleViewMCP->Vz() << ", "
+                      << singleViewMCP->EndZ() << " }\n\n";
+
+            std::cout << tab << "NO Z OVERLAP FOUND\n";
+            std::cout << tab << "trackId " << otherId << " (pdg = " << otherMCP->PdgCode() << ")\n";
+            std::cout << tab << "Start Stop X: { " << otherMCP->Vx() << ", " << otherMCP->EndX()
+                      << " }\n";
+            std::cout << tab << "Start Stop Z: { " << otherMCP->Vz() << ", " << otherMCP->EndZ()
+                      << " }\n";
+
+            std::cout << tab << "Overlap X? FALSE\n";
+            std::cout << tab << "Overlap Z? TRUE\n\n";
+
+            std::cout << tab << "Slice " << slc1 << "\n";
+
+            std::cout << tab << tab << "Vtx Position (" << slcMaps.sliceToVtx.at(slc1).X() << ", "
+                      << slcMaps.sliceToVtx.at(slc1).Y() << ", " << slcMaps.sliceToVtx.at(slc1).Z()
+                      << ")\n";
+
+            std::cout << tab << tab << "Assoc Hits Fraction "
+                      << slcMaps.sliceToMCTrackIdAndHits.at(slc1).at(id) << " / "
+                      << slcMaps.sliceToTotalHits.at(slc1) << " = " << assocHitsFrac1 << '\n';
+
+            std::cout << tab << tab << "This id seen in planes { ";
+
+            for (auto const& view : seenViews1) {
+              std::cout << view << ' ';
+            }
+            std::cout << "}\n";
+
+            std::cout << tab << "Slice " << slc2 << "\n";
+
+            std::cout << tab << tab << "Vtx Position (" << slcMaps.sliceToVtx.at(slc2).X() << ", "
+                      << slcMaps.sliceToVtx.at(slc2).Y() << ", " << slcMaps.sliceToVtx.at(slc2).Z()
+                      << ")\n";
+
+            std::cout << tab << tab << "Assoc Hits Fraction "
+                      << slcMaps.sliceToMCTrackIdAndHits.at(slc2).at(id) << " / "
+                      << slcMaps.sliceToTotalHits.at(slc2) << " = " << assocHitsFrac2 << '\n';
+
+            std::cout << tab << tab << "This id seen in planes { ";
+
+            for (auto const& view : seenViews2) {
+              std::cout << view << ' ';
+            }
+            std::cout << "}\n";
+          } // other TrackIds
+        }   // common TrackIds
+      }     // slice-TrackId pair2
+    }       // slice-TrackId pair1
+    return count;
   }
 
   void SliceHitPurityAna::DuplicateStudy(
@@ -219,174 +537,6 @@ namespace SliceHitPurity {
     fMaxMCParticleMatches.push_back(maxMCParticleMatches);
     fDuplicates.push_back(duplicates);
   }
-
-  void SliceHitPurityAna::analyze(art::Event const& evt)
-  {
-    for (auto const& cryo : fCryostats) {
-      std::string label = fSliceLabel + cryo.data();
-      std::string mcLabel = fMCLabel + cryo.data();
-
-      art::Handle<std::vector<recob::Slice>> slcHandle;
-      evt.getByLabel(fSliceLabel + cryo.data(), slcHandle);
-      if (!slcHandle.isValid()) {
-        mf::LogWarning(fModuleName.data())
-          << "Unabled to locate recob::Slice in " << fSliceLabel + cryo.data() << '\n';
-      }
-
-      art::Handle<std::vector<recob::Hit>> hitHandle;
-      evt.getByLabel(fHitLabel + cryo.data(), hitHandle);
-      if (!hitHandle.isValid()) {
-        mf::LogWarning(fModuleName.data())
-          << "Unabled to locate recob::Hit in " << fHitLabel + cryo.data() << '\n';
-      }
-
-      art::Handle<std::vector<recob::PFParticle>> pfpHandle;
-      evt.getByLabel(fSliceLabel + cryo.data(), pfpHandle);
-      if (!pfpHandle.isValid()) {
-        mf::LogWarning(fModuleName.data())
-          << "Unabled to locate recob::Hit in " << fHitLabel + cryo.data() << '\n';
-      }
-
-      art::FindMany<simb::MCParticle, anab::BackTrackerHitMatchingData> fmp(
-        hitHandle, evt, mcLabel);
-
-      art::FindManyP<recob::Hit> fmh(slcHandle, evt, label);
-      art::FindManyP<recob::Vertex> fmvtx(pfpHandle, evt, label);
-      art::FindManyP<recob::PFParticle> fmpfp(slcHandle, evt, label);
-
-      std::map<int, std::set<int>> sliceToMCTrackId;
-      std::map<int, std::map<int, int>> sliceToMCTrackIdAndHits;
-      std::map<int, std::size_t> sliceToTotalHits;
-      std::map<int, TVector3> sliceToVtx;
-      // std::map<int,
-      std::map<int, int> trackIdToPdg;
-      std::map<int, std::map<int, std::set<int>>> trackIdSeenInViews;
-      // make sure view 0
-      // true start/stop z of MCParticles and see if they overlap
-      for (auto const& slc : *slcHandle) {
-        const int sliceId = slc.ID();
-        auto const& hits = fmh.at(sliceId);
-        auto const& pfps = fmpfp.at(sliceId);
-        if (pfps.empty()) { continue ; }
-        auto const& prim =
-          std::find_if(pfps.begin(), pfps.end(), [](const art::Ptr<recob::PFParticle>& pfp) {
-            return pfp->IsPrimary();
-          });
-        auto const& vertices = fmvtx.at(prim->key());
-
-        if (vertices.size() == 1) {
-          sliceToVtx[sliceId] = TVector3(
-            vertices[0]->position().X(), vertices[0]->position().Y(), vertices[0]->position().Z());
-        }
-
-        // sliceToTotalHits[sliceId] = hits.size();
-        // mf::LogInfo(fModuleName.data()) << "============= Slice " << sliceID << " (" << cryo << ")"
-        // << " =============\n";
-        std::map<int, std::set<int>> planeTPCSets;
-
-        // DuplicateStudy(hits, fmp, sliceID);
-        //
-        // Make a pair of TPCID and nhits to calculate fraction of mixing cand?
-
-        std::map<int, int> trackIdToNHits;
-        // std::map<int, std::set<WirePlane>> seenInViews;
-        std::set<int> uniqueTrackIds;
-        sliceToTotalHits[sliceId] = 0;
-        for (auto const& hit : hits) {
-          auto const& wireID = hit->WireID();
-          auto const& planeID = wireID.asPlaneID().deepestIndex();
-          auto const& tpcID = wireID.asTPCID().deepestIndex();
-
-          // if (planeID != WirePlane::IND1) { continue; }
-
-          sliceToTotalHits[sliceId]++;
-
-          planeTPCSets[planeID].insert(tpcID);
-
-          // double matchedFraction = 0.;
-          auto const& mcParts = fmp.at(hit.key());
-          for (std::size_t i = 0; i < mcParts.size(); ++i) {
-            // const auto& md = fmp.data(hit.key()).at(i);
-
-            const int trackId = mcParts[i]->TrackId();
-            if (uniqueTrackIds.find(trackId) == uniqueTrackIds.end()) {
-              uniqueTrackIds.insert(trackId);
-              sliceToMCTrackIdAndHits[sliceId][trackId] = 0;
-              trackIdToPdg[trackId] = mcParts[i]->PdgCode();
-            }
-            trackIdSeenInViews[sliceId][trackId].insert(planeID);
-          }
-          for (auto const& id : uniqueTrackIds) {
-            sliceToMCTrackIdAndHits[sliceId][id]++;
-          }
-          sliceToMCTrackId[sliceId] = uniqueTrackIds;
-        }
-      } // Slice
-
-      for (auto it1 = sliceToMCTrackId.begin(); it1 != sliceToMCTrackId.end(); ++it1) {
-        for (auto it2 = std::next(it1); it2 != sliceToMCTrackId.end(); ++it2) {
-          const auto& slc1 = it1->first;
-          const auto& slc2 = it2->first;
-
-          std::set<int> commonIds;
-
-          std::set_intersection(it1->second.begin(),
-                                it1->second.end(),
-                                it2->second.begin(),
-                                it2->second.end(),
-                                std::inserter(commonIds, commonIds.begin()));
-
-          if (commonIds.empty()) { continue; }
-
-          std::cout << "Slices " << slc1 << ", " << slc2 << '\n';
-          std::cout << "  { ";
-          for (auto const& id : it1->second) {
-            std::cout << id << ' ';
-          }
-          std::cout << " }, { ";
-          for (auto const& id : it2->second) {
-            std::cout << id << ' ';
-          }
-          std::cout << " }\n  Common:\n";
-
-          for (auto const& id : commonIds) {
-            const auto frac1 = sliceToMCTrackIdAndHits[slc1][id] / (double)sliceToTotalHits[slc1];
-            const auto frac2 = sliceToMCTrackIdAndHits[slc2][id] / (double)sliceToTotalHits[slc2];
-            std::cout << "    trackId " << id << " (pdg = " << trackIdToPdg[id] << ")\n";
-            std::cout << "    (Slice " << slc1 << ") Position (" << sliceToVtx[slc1].X() << ", "
-                      << sliceToVtx[slc1].Y() << ", " << sliceToVtx[slc1].Z() << ")\n";
-            std::cout << "    (Slice " << slc2 << ") Position (" << sliceToVtx[slc2].X() << ", "
-                      << sliceToVtx[slc2].Y() << ", " << sliceToVtx[slc2].Z() << ")\n";
-            std::cout << "    (Slice " << slc1 << ") hits fraction "
-                      << sliceToMCTrackIdAndHits[slc1][id] << " / " << sliceToTotalHits[slc1]
-                      << " = " << frac1 << '\n';
-            std::cout << "    (Slice " << slc2 << ") hits fraction "
-                      << sliceToMCTrackIdAndHits[slc2][id] << " / " << sliceToTotalHits[slc2]
-                      << " = " << frac2 << '\n';
-            const auto& seenViews1 = trackIdSeenInViews[slc1][id];
-            const auto& seenViews2 = trackIdSeenInViews[slc2][id];
-            std::cout << "    (Slice " << slc1 << ") This id seen in planes { ";
-            for (auto const& view : seenViews1) {
-              std::cout << view << ' ';
-            }
-            std::cout << "}\n";
-            std::cout << "    (Slice " << slc2 << ") This id seen in planes { ";
-            for (auto const& view : seenViews2) {
-              std::cout << view << ' ';
-            }
-            std::cout << "}\n";
-          }
-        }
-      }
-    } // East/West Cryostat
-
-    fRun = evt.id().run();
-    fSubRun = evt.id().subRun();
-    fEvent = evt.id().event();
-    fTree->Fill();
-
-    mf::LogInfo(fModuleName.data()) << "Done." << std::endl;
-  } // end Analyze()
 
 } // namespace SliceHitPurity
 
