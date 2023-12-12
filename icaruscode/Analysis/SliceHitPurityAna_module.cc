@@ -15,29 +15,22 @@
 #include "art/Framework/Principal/SubRun.h"
 #include "art_root_io/TFileService.h"
 
-#include "canvas/Persistency/Common/FindMany.h"
+// #include "canvas/Persistency/Common/FindMany.h"
 #include "canvas/Persistency/Common/FindManyP.h"
 #include "canvas/Utilities/InputTag.h"
 #include "fhiclcpp/ParameterSet.h"
 #include "messagefacility/MessageLogger/MessageLogger.h"
 
-#include "lardataobj/AnalysisBase/BackTrackerMatchingData.h"
-#include "lardataobj/MCBase/MCParticleLite.h"
+// #include "lardataobj/AnalysisBase/BackTrackerMatchingData.h"
+// #include "lardataobj/MCBase/MCParticleLite.h"
 #include "lardataobj/RecoBase/Hit.h"
+#include "lardataobj/RecoBase/PFParticle.h"
 #include "lardataobj/RecoBase/Slice.h"
-
-#include <iostream>
-#include <larcoreobj/SimpleTypesAndConstants/geo_types.h>
-#include <lardataobj/RecoBase/PFParticle.h>
-#include <lardataobj/RecoBase/Vertex.h>
-#include <map>
-#include <memory>
-#include <set>
-#include <string_view>
-#include <unordered_map>
-#include <unordered_set>
+#include "lardataobj/RecoBase/Vertex.h"
 
 #include "TTree.h"
+
+#include <cstring>
 
 namespace SliceHitPurity {
   class SliceHitPurityAna : public art::EDAnalyzer {
@@ -56,77 +49,48 @@ namespace SliceHitPurity {
     void analyze(art::Event const& e) override;
 
   private:
-    // Declare member data here.
-    unsigned int fMixedCandidateCount = 0;
     enum WirePlane { IND1 = 0, IND2 = 1, COLL = 2 };
     static constexpr const char* fModuleName = "SliceHitPurityAna";
     static constexpr std::array<const char*, 2> fCryostats{"E", "W"};
     inline static const std::string fSliceLabel = "pandoraGausCryo";
     inline static const std::string fHitLabel = "cluster3DCryo";
-    inline static const std::string fMCLabel = "mcassociationsGausCryo";
+    // inline static const std::string fMCLabel = "mcassociationsGausCryo";
     constexpr static double fZGap = 200.; // for avoiding the z-Gap, e.g., std::abs(z) < fZGap
 
     art::Handle<std::vector<recob::Slice>> fSliceHandle;
 
     std::unique_ptr<art::FindManyP<recob::Hit>> fFindManyHits;
-    std::unique_ptr<art::FindMany<simb::MCParticle, anab::BackTrackerHitMatchingData>>
-      fFindManyMCParticles;
+    // std::unique_ptr<art::FindMany<simb::MCParticle, anab::BackTrackerHitMatchingData>>
+    //   fFindManyMCParticles;
     std::unique_ptr<art::FindManyP<recob::PFParticle>> fFindManyPFParticles;
     std::unique_ptr<art::FindManyP<recob::Vertex>> fFindManyVertices;
 
-    struct SliceMaps {
-      std::map<int, std::set<int>> sliceToMCTrackId;
-      std::map<int, std::map<int, int>> sliceToMCTrackIdAndHits;
-      std::map<int, std::size_t> sliceToTotalHits;
-      std::map<int, TVector3> sliceToVtx;
-      // std::map<int, int> trackIdToPdg;
-      std::map<int, std::map<int, std::set<int>>> trackIdSeenInViews;
-      std::map<int, const simb::MCParticle*> trackIdToMCParticle;
-    };
+    unsigned int fRun;
+    unsigned int fSubRun;
+    unsigned int fEvent;
+    unsigned int fCryo;
+    unsigned int fSliceNumber;
+    unsigned int fNoHitsInSlice;
+    unsigned int fMixCandidatesInSlice;
+    unsigned int fTotalNoSlices;
+    unsigned int fTotalNoSlicesWithMixing;
 
-    std::vector<int> fRuns;
-    std::vector<int> fSubRuns;
-    std::vector<int> fEvents;
-    std::vector<int> fSliceNumbers;
-    std::vector<bool> fIsCosmicSlice;
-
-    std::vector<int> fNHitsInSlice;
-    std::vector<int> fUnmatchedHits;
-    std::vector<int> fDuplicates;
-    std::vector<int> fMatchedHits;
-    std::vector<int> fMaxMCParticleMatches;
-    std::vector<int> fMultiMatchedHits;
-
-    std::vector<double> fUnmatchedHitFraction;
-    std::vector<double> fMatchedHitFraction;
-    std::vector<double> fMultiMatchedHitFractionContainingDupes;
-    std::vector<double> fMultiMatchedHitFraction;
-    std::unordered_map<int, int> fPdgSetMap;
-
-    int fRun, fSubRun, fEvent;
+    double fSliceVtxX, fSliceVtxY, fSliceVtxZ;
 
     TTree* fTree;
 
     void InitTTree();
     void SetupFindManyPointers(art::Event const& evt, const std::string_view cryo);
-    void DuplicateStudy(
-      const std::vector<art::Ptr<recob::Hit>>& hits,
-      const art::FindMany<simb::MCParticle, anab::BackTrackerHitMatchingData>& fmp,
-      const int sliceID);
-    static bool IsProbablyACosmic(const simb::MCParticle& particle);
-    [[nodiscard]] int SliceHitStudy(const SliceMaps& slcMaps);
-    void DumpToTerminal();
   };
 
   SliceHitPurityAna::SliceHitPurityAna(fhicl::ParameterSet const& p)
     : EDAnalyzer{p}
     , fFindManyHits(nullptr)
-    , fFindManyMCParticles(nullptr)
     , fFindManyPFParticles(nullptr)
     , fFindManyVertices(nullptr)
+    , fTotalNoSlices(0)
+    , fTotalNoSlicesWithMixing(0)
   {
-    // Call appropriate consumes<>() for any products to be retrieved by this
-    // TODO: what?
     InitTTree();
   }
 
@@ -137,27 +101,19 @@ namespace SliceHitPurity {
     fTree->Branch("run", &fRun, "run/I");
     fTree->Branch("subrun", &fSubRun, "subrun/I");
     fTree->Branch("event", &fEvent, "event/I");
-
-    fTree->Branch("slice", "std::vector<int>", &fSliceNumbers);
-    fTree->Branch("is_cosmic_slice", "std::vector<bool>", &fIsCosmicSlice);
-    fTree->Branch("nhits", "std::vector<int>", &fNHitsInSlice);
-    fTree->Branch("unmatched_hits", "std::vector<int>", &fUnmatchedHits);
-    fTree->Branch("matched_hits", "std::vector<int>", &fMatchedHits);
-    fTree->Branch("n_duplicates", "std::vector<int>", &fDuplicates);
-    fTree->Branch("max_mcparticle_matches", "std::vector<int>", &fMaxMCParticleMatches);
-    fTree->Branch("multiple_matched_hits", "std::vector<int>", &fMultiMatchedHits);
-    fTree->Branch("unmatched_fraction", "std::vector<double>", &fUnmatchedHitFraction);
-    fTree->Branch("matched_fraction", "std::vector<double>", &fMatchedHitFraction);
-    fTree->Branch("multimatched_fraction", "std::vector<double>", &fMultiMatchedHitFraction);
-    fTree->Branch("multimatched_fraction_containing_dupes",
-                  "std::vector<double>",
-                  &fMultiMatchedHitFractionContainingDupes);
+    fTree->Branch("cryostat", &fCryo, "cryostat/I");
+    fTree->Branch("slice", &fSliceNumber, "slice/I");
+    fTree->Branch("slice_vtx_x", &fSliceVtxX, "slice_vtx_x/D");
+    fTree->Branch("slice_vtx_y", &fSliceVtxY, "slice_vtx_y/D");
+    fTree->Branch("slice_vtx_z", &fSliceVtxZ, "slice_vtx_z/D");
+    fTree->Branch("no_hits", &fNoHitsInSlice, "no_hits/I");
+    fTree->Branch("no_mixing_candidates", &fMixCandidatesInSlice, "no_mixing_candidates/I");
   }
 
   void SliceHitPurityAna::SetupFindManyPointers(art::Event const& evt, const std::string_view cryo)
   {
     std::string label = fSliceLabel + cryo.data();
-    std::string mcLabel = fMCLabel + cryo.data();
+    // std::string mcLabel = fMCLabel + cryo.data();
 
     evt.getByLabel(fSliceLabel + cryo.data(), fSliceHandle);
     if (!fSliceHandle.isValid()) {
@@ -179,9 +135,9 @@ namespace SliceHitPurity {
                                   << '\n';
     }
 
-    fFindManyMCParticles =
-      std::make_unique<art::FindMany<simb::MCParticle, anab::BackTrackerHitMatchingData>>(
-        hitHandle, evt, mcLabel);
+    // fFindManyMCParticles =
+    //   std::make_unique<art::FindMany<simb::MCParticle, anab::BackTrackerHitMatchingData>>(
+    //     hitHandle, evt, mcLabel);
 
     fFindManyHits = std::make_unique<art::FindManyP<recob::Hit>>(fSliceHandle, evt, label);
     fFindManyVertices = std::make_unique<art::FindManyP<recob::Vertex>>(pfpHandle, evt, label);
@@ -189,26 +145,22 @@ namespace SliceHitPurity {
       std::make_unique<art::FindManyP<recob::PFParticle>>(fSliceHandle, evt, label);
   }
 
-  bool SliceHitPurityAna::IsProbablyACosmic(const simb::MCParticle& particle)
-  {
-    const bool isMuon = std::abs(particle.PdgCode());
-    const bool generatedOutsideVolume = std::fabs(particle.Vx()) > 360. ||
-                                        std::fabs(particle.Vz()) > 900. || particle.Vy() > 135. ||
-                                        particle.Vy() < -185.;
-
-    return isMuon && generatedOutsideVolume;
-  }
-
   void SliceHitPurityAna::analyze(art::Event const& evt)
   {
+    fRun = evt.id().run();
+    fSubRun = evt.id().subRun();
+    fEvent = evt.id().event();
+
+    int noSlices = 0;
+    int noSlicesWithMixCand = 0;
     for (auto const& cryo : fCryostats) {
       SetupFindManyPointers(evt, cryo);
 
-      SliceMaps slcMaps;
+      auto const& slices = *fSliceHandle;
 
-      for (auto const& slc : *fSliceHandle) {
+      for (auto const& slc : slices) {
         const int sliceId = slc.ID();
-        auto const& hits = fFindManyHits->at(sliceId);
+
         auto const& pfps = fFindManyPFParticles->at(sliceId);
         if (pfps.empty()) { continue; }
         auto const& prim =
@@ -224,319 +176,76 @@ namespace SliceHitPurity {
 
         if (std::abs(vtx.Z()) < fZGap) { continue; }
 
-        slcMaps.sliceToVtx[sliceId] = vtx;
+        auto const& hits = fFindManyHits->at(sliceId);
 
-        std::map<int, std::set<int>> planeTPCSets;
-
-        // DuplicateStudy(hits, fmp, sliceID);
-
-        std::map<int, int> trackIdToNHits;
-        std::set<int> uniqueTrackIds;
-        slcMaps.sliceToTotalHits[sliceId] = 0;
-        std::vector<geo::WireID> wires;
-        for (auto const& hit : hits) {
-          auto const& wireID = hit->WireID();
-          auto const& planeID = wireID.asPlaneID().deepestIndex();
-          auto const& tpcID = wireID.asTPCID().deepestIndex();
-
-          if (planeID == WirePlane::IND1) { wires.push_back(wireID); }
-
-          slcMaps.sliceToTotalHits[sliceId]++;
-
-          planeTPCSets[planeID].insert(tpcID);
-
-          // double matchedFraction = 0.;
-          auto const& mcParts = fFindManyMCParticles->at(hit.key());
-          for (std::size_t i = 0; i < mcParts.size(); ++i) {
-            auto const& mcp = mcParts[i];
-            if (std::abs(mcp->Vz()) < fZGap || std::abs(mcp->EndZ()) < fZGap) { continue; }
-            // auto const& md = fmp.data(hit.key()).at(i);
-
-            const int trackId = mcp->TrackId();
-            if (uniqueTrackIds.find(trackId) == uniqueTrackIds.end()) {
-              uniqueTrackIds.insert(trackId);
-              slcMaps.sliceToMCTrackIdAndHits[sliceId][trackId] = 0;
-              // slcMaps.trackIdToPdg[trackId] = mcp->PdgCode();
-              slcMaps.trackIdToMCParticle[trackId] = mcp;
-            }
-            slcMaps.trackIdSeenInViews[sliceId][trackId].insert(planeID);
-          }
-          for (auto const& id : uniqueTrackIds) {
-            slcMaps.sliceToMCTrackIdAndHits[sliceId][id]++;
-          }
-          slcMaps.sliceToMCTrackId[sliceId] = uniqueTrackIds;
-        } // Hits
-      }   // Slices
-      const int count = SliceHitStudy(slcMaps);
-      fMixedCandidateCount += count;
-      mf::LogInfo(fModuleName) << "Final count for slice: " << count << '\n';
-    } // East/West Cryostat
-
-    fRun = evt.id().run();
-    fSubRun = evt.id().subRun();
-    fEvent = evt.id().event();
-    fTree->Fill();
-
-    mf::LogInfo(fModuleName) << "Done.\n"
-                             << "FINAL COUNT " << fMixedCandidateCount << std::endl;
-  } // end Analyze()
-
-  int SliceHitPurityAna::SliceHitStudy(const SliceMaps& slcMaps)
-  {
-    unsigned int count = 0;
-    for (auto it1 = slcMaps.sliceToMCTrackId.begin(); it1 != slcMaps.sliceToMCTrackId.end();
-         ++it1) {
-      for (auto it2 = std::next(it1); it2 != slcMaps.sliceToMCTrackId.end(); ++it2) {
-        auto const& slc1 = it1->first;
-        auto const& slc2 = it2->first;
-        auto const& trackIds1 = it1->second;
-        auto const& trackIds2 = it2->second;
-
-        std::set<int> commonIds;
-
-        std::set_intersection(trackIds1.begin(),
-                              trackIds1.end(),
-                              trackIds2.begin(),
-                              trackIds2.end(),
-                              std::inserter(commonIds, commonIds.begin()));
-
-        if (commonIds.empty()) { continue; }
-
-        std::set<int> otherIds;
-        std::set_symmetric_difference(trackIds1.begin(),
-                                      trackIds1.end(),
-                                      trackIds2.begin(),
-                                      trackIds2.end(),
-                                      std::inserter(otherIds, otherIds.begin()));
-
-        for (auto const& id : commonIds) {
-          auto const noAssocHits1 = slcMaps.sliceToMCTrackIdAndHits.at(slc1).at(id);
-          auto const noAssocHits2 = slcMaps.sliceToMCTrackIdAndHits.at(slc2).at(id);
-
-          auto const noTotalHits1 = slcMaps.sliceToTotalHits.at(slc1);
-          auto const noTotalHits2 = slcMaps.sliceToTotalHits.at(slc2);
-
-          auto const assocHitsFrac1 = noAssocHits1 / (double)noTotalHits1;
-          auto const assocHitsFrac2 = noAssocHits2 / (double)noTotalHits2;
-
-          auto const& seenViews1 = slcMaps.trackIdSeenInViews.at(slc1).at(id);
-          auto const& seenViews2 = slcMaps.trackIdSeenInViews.at(slc2).at(id);
-
-          const bool trackIdSlc1SeenOnce = seenViews1.size() == 1;
-          const bool trackIdSlc2SeenOnce = seenViews2.size() == 1;
-
-          auto const trackIdSeenInduction1Only =
-            (trackIdSlc1SeenOnce && *seenViews1.begin() == 0) ||
-            (trackIdSlc2SeenOnce && *seenViews2.begin() == 0);
-
-          auto const otherTrackIdSeenInMultipleViews =
-            trackIdSeenInduction1Only && (seenViews1.size() > 1 || seenViews2.size() > 1);
-
-          if (!otherTrackIdSeenInMultipleViews) { continue; }
-
-          auto const& multiViews = seenViews1.size() > 1 ? seenViews1 : seenViews2;
-
-          bool isAnyInd1 = false;
-          for (auto const& view : multiViews) {
-            if (view == 0) { isAnyInd1 = true; }
-          }
-
-          if (!isAnyInd1) { continue; }
-
-          auto const& singleViewMCP = slcMaps.trackIdToMCParticle.at(id);
-
-          const double startX = singleViewMCP->Vx();
-          const double endX = singleViewMCP->EndX();
-
-          const double startZ = singleViewMCP->Vz();
-          const double endZ = singleViewMCP->EndZ();
-
-          const double maxX = std::max(startX, endX);
-          const double maxZ = std::max(startZ, endZ);
-          const double minX = std::min(startX, endX);
-          const double minZ = std::min(startZ, endZ);
-
-          for (auto const& otherId : otherIds) {
-            if (otherId == id) { continue; }
-            auto const& otherMCP = slcMaps.trackIdToMCParticle.at(otherId);
-            const double otherStartX = otherMCP->Vx();
-            const double otherEndX = otherMCP->EndX();
-
-            const double otherStartZ = otherMCP->Vz();
-            const double otherEndZ = otherMCP->EndZ();
-
-            const double otherMaxX = std::max(otherStartX, otherEndX);
-            const double otherMaxZ = std::max(otherStartZ, otherEndZ);
-
-            const double otherMinX = std::min(otherStartX, otherEndX);
-            const double otherMinZ = std::min(otherStartZ, otherEndZ);
-
-            const double overlapX = std::min(maxX, otherMaxX) - std::max(minX, otherMinX);
-            const double overlapZ = std::min(maxZ, otherMaxZ) - std::max(minZ, otherMinZ);
-
-            const bool noOverlapX = overlapX < std::numeric_limits<double>::epsilon();
-            const bool noOverlapZ = overlapZ < std::numeric_limits<double>::epsilon();
-
-            // if doesn't overlap in x or does overlap in z, continue.
-            if (noOverlapX || !noOverlapZ) { continue; }
-
-            count++;
-
-            const char* const tab = "    ";
-            std::cout << "Slices " << slc1 << ", " << slc2 << '\n';
-            std::cout << tab << "{ ";
-            for (auto const& id : trackIds1) {
-              std::cout << id << ' ';
-            }
-
-            std::cout << "}, { ";
-            for (auto const& id : trackIds2) {
-              std::cout << id << ' ';
-            }
-            std::cout << " }\n";
-
-            std::cout << tab << "COMMON TrackId " << id << " (pdg = " << singleViewMCP->PdgCode()
-                      << ")\n";
-
-            std::cout << tab << "Start Stop X: { " << singleViewMCP->Vx() << ", "
-                      << singleViewMCP->EndX() << " }\n";
-            std::cout << tab << "Start Stop Z: { " << singleViewMCP->Vz() << ", "
-                      << singleViewMCP->EndZ() << " }\n\n";
-
-            std::cout << tab << "NO Z OVERLAP FOUND\n";
-            std::cout << tab << "trackId " << otherId << " (pdg = " << otherMCP->PdgCode() << ")\n";
-            std::cout << tab << "Start Stop X: { " << otherMCP->Vx() << ", " << otherMCP->EndX()
-                      << " }\n";
-            std::cout << tab << "Start Stop Z: { " << otherMCP->Vz() << ", " << otherMCP->EndZ()
-                      << " }\n";
-
-            std::cout << tab << "Overlap X? " << noOverlapX << " (" << overlapX << " cm) \n";
-            std::cout << tab << "Overlap Z? " << noOverlapZ << " (" << overlapZ << " cm)\n\n";
-
-            std::cout << tab << "Slice " << slc1 << "\n";
-
-            std::cout << tab << tab << "Vtx Position (" << slcMaps.sliceToVtx.at(slc1).X() << ", "
-                      << slcMaps.sliceToVtx.at(slc1).Y() << ", " << slcMaps.sliceToVtx.at(slc1).Z()
-                      << ")\n";
-
-            std::cout << tab << tab << "Assoc Hits Fraction "
-                      << slcMaps.sliceToMCTrackIdAndHits.at(slc1).at(id) << " / "
-                      << slcMaps.sliceToTotalHits.at(slc1) << " = " << assocHitsFrac1 << '\n';
-
-            std::cout << tab << tab << "This id seen in planes { ";
-
-            for (auto const& view : seenViews1) {
-              std::cout << view << ' ';
-            }
-            std::cout << "}\n";
-
-            std::cout << tab << "Slice " << slc2 << "\n";
-
-            std::cout << tab << tab << "Vtx Position (" << slcMaps.sliceToVtx.at(slc2).X() << ", "
-                      << slcMaps.sliceToVtx.at(slc2).Y() << ", " << slcMaps.sliceToVtx.at(slc2).Z()
-                      << ")\n";
-
-            std::cout << tab << tab << "Assoc Hits Fraction "
-                      << slcMaps.sliceToMCTrackIdAndHits.at(slc2).at(id) << " / "
-                      << slcMaps.sliceToTotalHits.at(slc2) << " = " << assocHitsFrac2 << '\n';
-
-            std::cout << tab << tab << "This id seen in planes { ";
-
-            for (auto const& view : seenViews2) {
-              std::cout << view << ' ';
-            }
-            std::cout << "}\n";
-          } // other TrackIds
-        }   // common TrackIds
-      }     // slice-TrackId pair2
-    }       // slice-TrackId pair1
-    return count;
-  }
-
-  void SliceHitPurityAna::DuplicateStudy(
-    const std::vector<art::Ptr<recob::Hit>>& hits,
-    const art::FindMany<simb::MCParticle, anab::BackTrackerHitMatchingData>& fmp,
-    const int sliceID)
-  {
-    auto const nHits = hits.size();
-    unsigned int hit_count = 0;
-
-    unsigned int noMatches = 0;
-    unsigned int hitsMatchedToOneMCP = 0;
-    unsigned int hitsMatchedToMultipleMCP = 0;
-    unsigned int maxMCParticleMatches = 0;
-    unsigned int duplicates = 0;
-
-    std::unordered_set<int> mcpIds;
-    std::vector<bool> cosmicTags;
-
-    for (auto const& hit : hits) {
-      auto const& mcParts = fmp.at(hit.key());
-
-      const unsigned int nMCP = mcParts.size();
-
-      if (nMCP > maxMCParticleMatches) maxMCParticleMatches = nMCP;
-
-      if (nMCP == 0) { noMatches++; }
-      else if (nMCP == 1) {
-        hitsMatchedToOneMCP++;
-      }
-      else {
-        bool atLeastOneDuplicate = false;
-        int i = 0;
-        std::cout << "Hit " << hit_count << '\n';
-        for (auto const& p : mcParts) {
-          auto const& d = fmp.data(hit.key()).at(i);
-          auto const id = p->TrackId();
-          auto const pdg = p->PdgCode();
-          std::cout << "    TrackId " << id << '\n';
-          std::cout << "    PDG " << pdg << '\n';
-          std::cout << "    IDE Fraction " << d->ideFraction << '\n';
-          std::cout << "    isMaxIDE " << d->isMaxIDE << '\n';
-          std::cout << "    numElectrons " << d->numElectrons << '\n';
-          std::cout << "    energy " << d->energy << "\n\n";
-          i++;
-          if (mcpIds.find(id) == mcpIds.end()) {
-            mcpIds.insert(id);
-            if (fPdgSetMap.find(pdg) == fPdgSetMap.end()) fPdgSetMap[pdg] = 0;
-          }
-          else {
-            fPdgSetMap[pdg]++;
-            atLeastOneDuplicate = true;
-          }
-          cosmicTags.push_back(IsProbablyACosmic(*p));
+        if (hits.empty()) {
+          mf::LogInfo(fModuleName) << "No hits in slice " << sliceId << '\n';
+          continue;
         }
-        if (atLeastOneDuplicate) duplicates++;
-        hitsMatchedToMultipleMCP++;
-      }
-      hit_count++;
+
+        auto const noHits = hits.size();
+
+        unsigned int mixCandidates = 0;
+        for (auto prevIt = hits.begin(); std::distance(prevIt, hits.end()) >= 3; ++prevIt) {
+
+          auto const it = prevIt + 1;
+          auto const nextIt = prevIt + 2;
+
+          auto const& hit = *it;
+          auto const& prevHit = *prevIt;
+          auto const& nextHit = *nextIt;
+
+          auto const& wireID = hit->WireID();
+          const int planeId = wireID.asPlaneID().deepestIndex();
+
+          if (planeId != WirePlane::IND1) { continue; }
+
+          const int tpcId = wireID.asTPCID().deepestIndex();
+          const int prevTPCId = prevHit->WireID().asTPCID().deepestIndex();
+          const int lastTPCId = nextHit->WireID().asTPCID().deepestIndex();
+
+          if ((tpcId != prevTPCId) && (prevTPCId == lastTPCId) &&
+              (prevHit->Channel() + 1 == nextHit->Channel())) {
+            mixCandidates++;
+          }
+
+        } // Hits
+
+        noSlices++;
+        if (mixCandidates > 0) { noSlicesWithMixCand++; }
+
+        fCryo = strcmp(cryo, "E") == 0 ? 0 : 1;
+        fSliceNumber = sliceId;
+        fSliceVtxX = vtx.X();
+        fSliceVtxY = vtx.Y();
+        fSliceVtxZ = vtx.Z();
+        fNoHitsInSlice = noHits;
+        fMixCandidatesInSlice = mixCandidates;
+
+        fTree->Fill();
+
+        const double candsPerHits = mixCandidates / (double)noHits;
+
+        mf::LogInfo(fModuleName) << "Slice Number " << sliceId << '\n'
+                                 << "mix candidates " << mixCandidates << " / " << noHits << " = "
+                                 << candsPerHits << '\n'
+                                 << "Slice Vtx (" << vtx.X() << ", " << vtx.Y() << ", " << vtx.Z()
+                                 << ")\n";
+      } // Slices
+    }   // East/West Cryostat
+
+    fTotalNoSlices += noSlices;
+    fTotalNoSlicesWithMixing += noSlicesWithMixCand;
+
+    if (fTotalNoSlices > 0) {
+      mf::LogInfo(fModuleName) << " Slices with mix / Total Slices = " << fTotalNoSlicesWithMixing
+                               << " / " << fTotalNoSlices << " = "
+                               << fTotalNoSlicesWithMixing / (double)fTotalNoSlices << '\n';
     }
-    const double unmatchedFraction = nHits > 0 ? noMatches / (double)nHits : -1.;
-    const double matchedFraction = nHits > 0 ? hitsMatchedToOneMCP / (double)nHits : -1.;
-    const double multimatchedFraction = nHits > 0 ? hitsMatchedToMultipleMCP / (double)nHits : -1.;
-    const double multimatchedFractionContainingDupes =
-      (nHits > 0) && (hitsMatchedToMultipleMCP > 0) ?
-        duplicates / (double)hitsMatchedToMultipleMCP :
-        -1.;
-
-    const long unsigned int cosmicCount = std::count(cosmicTags.begin(), cosmicTags.end(), true);
-
-    fIsCosmicSlice.push_back(cosmicCount > cosmicTags.size() / 2);
-    fSliceNumbers.push_back(sliceID);
-    fNHitsInSlice.push_back(nHits);
-
-    fUnmatchedHits.push_back(noMatches);
-    fMatchedHits.push_back(hitsMatchedToOneMCP);
-    fMultiMatchedHits.push_back(hitsMatchedToMultipleMCP);
-
-    fUnmatchedHitFraction.push_back(unmatchedFraction);
-    fMatchedHitFraction.push_back(matchedFraction);
-    fMultiMatchedHitFraction.push_back(multimatchedFraction);
-    fMultiMatchedHitFractionContainingDupes.push_back(multimatchedFractionContainingDupes);
-
-    fMaxMCParticleMatches.push_back(maxMCParticleMatches);
-    fDuplicates.push_back(duplicates);
-  }
+    else {
+      mf::LogInfo(fModuleName) << "No valid slices so far.\n";
+    }
+  } // end Analyze()
 
 } // namespace SliceHitPurity
 
