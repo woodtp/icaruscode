@@ -77,4 +77,8 @@ Thumbs.db
 
 # emacs back up
 \#*\#
+
+# clangd
 compile_commands.json
+.cache
+.clang-format

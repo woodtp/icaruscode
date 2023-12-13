@@ -1,0 +1,18 @@
+process_name: SliceHitPurity
+
+services:
+{
+    TFileService: { fileName: "sliceHitPurityAna.root" }
+}
+
+physics:
+{
+    analyzers:
+    {
+        SliceHitPurity: {
+            module_type: "SliceHitPurityAna"
+        }
+    }
+    ana: [ SliceHitPurity ]
+    end_paths: [ ana ]
+}
